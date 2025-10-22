@@ -24,11 +24,24 @@ exports.connectToDatabase = async () => {
     console.log('🔌 Connecting to MongoDB...');
     console.log('📍 URI:', MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@')); // Hide password
     
+    // Log OpenSSL version to help debug TLS issues on hosting platforms
+    try {
+      console.log('🔒 OpenSSL version:', process.versions.openssl || 'unknown');
+    } catch (e) {
+      console.log('🔒 Could not read OpenSSL version');
+    }
+
+    // Use explicit TLS options to avoid ambiguous defaults on some platforms
     client = new MongoClient(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      // Use TLS for Atlas connections
+      tls: true,
+      // Do not allow insecure TLS by default
+      tlsAllowInvalidCertificates: false,
+      // Timeouts
       serverSelectionTimeoutMS: 5000,
       connectTimeoutMS: 10000,
+      // Enable monitoring commands for better logs (disabled in some environments)
+      monitorCommands: false,
     });
     
     await client.connect();
