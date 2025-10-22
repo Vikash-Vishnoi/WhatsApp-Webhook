@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: whatsapp-webhook
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGODB_URI
+        sync: false
+        # Set this in Render dashboard - your MongoDB Atlas connection string
+      - key: WHATSAPP_VERIFY_TOKEN
+        value: hospital_whatsapp_2024
+      - key: BACKEND_URL
+        sync: false
+        # Optional: Your main backend URL for notifications
+      - key: WEBHOOK_SECRET
+        sync: false
+        # Optional: Secret for securing notifications
