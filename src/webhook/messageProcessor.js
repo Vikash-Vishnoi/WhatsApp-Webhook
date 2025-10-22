@@ -106,4 +106,7 @@ function extractMessageData(webhookData) {
   };
 }
 
-module.exports = { processIncomingMessage };
+// Ensure the exported function is the one attached to `exports` above.
+// We used `exports.processIncomingMessage = ...` earlier, so reference
+// that property when building module.exports to avoid a ReferenceError.
+module.exports = { processIncomingMessage: exports.processIncomingMessage };
