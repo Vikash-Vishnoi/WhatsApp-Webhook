@@ -25,35 +25,40 @@ exports.processIncomingMessage = async (webhookData) => {
 
     // Extract contact info
     const contactInfo = webhookData.contacts?.[0];
-    const contactName = contactInfo?.profile?.name || 'Unknown';
+    const contactName = contactInfo?.profile?.name || messageData.from;
     
     console.log('👤 Contact name:', contactName);
 
-    // Find or create conversation
+    // Admin user ID for webhook-created conversations
+    const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '68f927fe0837e17cb3a12024';
+    const businessPhoneId = webhookData.metadata?.phone_number_id || '897748750080236';
+
+    // Find or create conversation (using backend-compatible schema)
     console.log('🔍 Finding/creating conversation...');
     const conversation = await findOrCreateConversation({
-      patientPhone: messageData.from,
-      patientName: contactName,
+      phoneNumber: messageData.from,  // Changed from patientPhone
+      name: contactName,              // Changed from patientName
+      userId: ADMIN_USER_ID,          // Added userId
       lastMessageText: messageData.text?.body || `[${messageData.type}]`,
       lastMessageTimestamp: new Date(parseInt(messageData.timestamp) * 1000)
     });
 
     console.log('💾 Conversation ID:', conversation._id);
 
-    // Prepare message document
+    // Prepare message document (backend-compatible schema)
     const messageDoc = {
       conversationId: conversation._id,
-      phoneNumber: messageData.from,
-      text: messageData.text?.body || '',
-      type: messageData.type,
+      from: messageData.from,                    // Added 'from' field
+      to: businessPhoneId,                       // Added 'to' field
+      userId: ADMIN_USER_ID,                     // Added userId
       direction: 'incoming',
+      type: messageData.type,
+      content: {                                 // Changed to nested content
+        text: messageData.text?.body || ''
+      },
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
       whatsappMessageId: messageData.id,
-      status: 'delivered',
-      metadata: {
-        context: messageData.context,
-        webhookTimestamp: new Date()
-      }
+      status: 'delivered'
     };
 
     // Save message to database

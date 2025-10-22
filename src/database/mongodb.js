@@ -79,6 +79,7 @@ async function createIndexes() {
 
 /**
  * Save an incoming message to the database
+ * Using backend-compatible schema
  */
 exports.saveMessage = async (messageData) => {
   try {
@@ -98,23 +99,19 @@ exports.saveMessage = async (messageData) => {
     const result = await database.collection('messages').insertOne({
       ...messageData,
       createdAt: new Date(),
-      processed: true
+      updatedAt: new Date()
     });
 
-    // Update conversation with latest message info
+    // Update conversation with latest message info (backend-compatible format)
     await database.collection('conversations').updateOne(
       { _id: messageData.conversationId },
       {
         $set: {
-          lastMessage: {
-            text: messageData.text || `[${messageData.type}]`,
-            timestamp: messageData.timestamp,
-            direction: 'incoming'
-          },
+          lastMessage: messageData.content?.text || `[${messageData.type}]`,  // Flat string
+          lastMessageAt: messageData.timestamp,                                 // Changed field name
           updatedAt: new Date()
         },
         $inc: {
-          messageCount: 1,
           unreadCount: 1
         }
       }
@@ -130,14 +127,17 @@ exports.saveMessage = async (messageData) => {
 
 /**
  * Find existing conversation or create new one
+ * Using backend-compatible schema
  */
-exports.findOrCreateConversation = async ({ patientPhone, patientName, lastMessageText, lastMessageTimestamp }) => {
+exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessageText, lastMessageTimestamp }) => {
   try {
     const database = await exports.connectToDatabase();
+    const { ObjectId } = require('mongodb');
     
-    // Try to find existing conversation
+    // Try to find existing conversation by phoneNumber and userId
     let conversation = await database.collection('conversations').findOne({
-      patientPhone: patientPhone
+      phoneNumber: phoneNumber,
+      userId: new ObjectId(userId)
     });
 
     if (conversation) {
@@ -145,19 +145,16 @@ exports.findOrCreateConversation = async ({ patientPhone, patientName, lastMessa
       return conversation;
     }
 
-    // Create new conversation
-    console.log('📝 Creating new conversation for:', patientPhone);
+    // Create new conversation with backend-compatible schema
+    console.log('📝 Creating new conversation for:', phoneNumber);
     const result = await database.collection('conversations').insertOne({
-      patientPhone: patientPhone,
-      patientName: patientName,
-      status: 'open',
-      messageCount: 0,
+      phoneNumber: phoneNumber,           // Changed from patientPhone
+      name: name,                         // Changed from patientName
+      userId: new ObjectId(userId),       // Added userId
+      status: 'active',                   // Changed from 'open' to 'active'
+      lastMessage: lastMessageText || 'New conversation',  // Flat string, not object
+      lastMessageAt: lastMessageTimestamp || new Date(),   // Changed from nested structure
       unreadCount: 0,
-      lastMessage: {
-        text: lastMessageText || 'New conversation',
-        timestamp: lastMessageTimestamp || new Date(),
-        direction: 'incoming'
-      },
       createdAt: new Date(),
       updatedAt: new Date()
     });
