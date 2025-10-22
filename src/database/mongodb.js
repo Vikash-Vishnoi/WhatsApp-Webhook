@@ -70,7 +70,7 @@ async function createIndexes() {
   try {
     await db.collection('messages').createIndex({ whatsappMessageId: 1 }, { unique: true, sparse: true });
     await db.collection('messages').createIndex({ conversationId: 1, timestamp: -1 });
-    await db.collection('conversations').createIndex({ patientPhone: 1 }, { unique: true });
+    await db.collection('conversations').createIndex({ 'contact.phoneNumberNormalized': 1, userId: 1 }, { unique: true });
     console.log('✅ Database indexes created');
   } catch (error) {
     console.log('ℹ️  Indexes already exist or creation failed:', error.message);
@@ -107,12 +107,18 @@ exports.saveMessage = async (messageData) => {
       { _id: messageData.conversationId },
       {
         $set: {
-          lastMessage: messageData.content?.text || `[${messageData.type}]`,  // Flat string
-          lastMessageAt: messageData.timestamp,                                 // Changed field name
+          'lastMessage.text': messageData.content?.text || `[${messageData.type}]`,
+          'lastMessage.type': messageData.type,
+          'lastMessage.direction': 'incoming',
+          'lastMessage.timestamp': messageData.timestamp,
+          'lastMessage.status': 'delivered',
+          lastMessageAt: messageData.timestamp,
           updatedAt: new Date()
         },
         $inc: {
-          unreadCount: 1
+          unreadCount: 1,
+          'metrics.totalMessages': 1,
+          'metrics.incomingMessages': 1
         }
       }
     );
@@ -127,16 +133,20 @@ exports.saveMessage = async (messageData) => {
 
 /**
  * Find existing conversation or create new one
- * Using backend-compatible schema
+ * Using backend-compatible schema with nested contact and lastMessage
  */
 exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessageText, lastMessageTimestamp }) => {
   try {
     const database = await exports.connectToDatabase();
     const { ObjectId } = require('mongodb');
+    const Conversation = require('../../../../backend/models/Conversation');
     
-    // Try to find existing conversation by phoneNumber and userId
+    // Normalize phone number for consistent lookups
+    const phoneNormalized = Conversation.normalizePhone(phoneNumber);
+    
+    // Try to find existing conversation by normalized phone and userId
     let conversation = await database.collection('conversations').findOne({
-      phoneNumber: phoneNumber,
+      'contact.phoneNumberNormalized': phoneNormalized,
       userId: new ObjectId(userId)
     });
 
@@ -145,16 +155,31 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
       return conversation;
     }
 
-    // Create new conversation with backend-compatible schema
+    // Create new conversation with backend-compatible schema (nested structure)
     console.log('📝 Creating new conversation for:', phoneNumber);
     const result = await database.collection('conversations').insertOne({
-      phoneNumber: phoneNumber,           // Changed from patientPhone
-      name: name,                         // Changed from patientName
-      userId: new ObjectId(userId),       // Added userId
-      status: 'active',                   // Changed from 'open' to 'active'
-      lastMessage: lastMessageText || 'New conversation',  // Flat string, not object
-      lastMessageAt: lastMessageTimestamp || new Date(),   // Changed from nested structure
+      contact: {
+        phoneNumber: phoneNumber,
+        phoneNumberNormalized: phoneNormalized,
+        name: name || phoneNumber
+      },
+      userId: new ObjectId(userId),
+      status: 'active',
+      lastMessage: {
+        text: lastMessageText || 'New conversation',
+        type: 'text',
+        direction: 'incoming',
+        timestamp: lastMessageTimestamp || new Date(),
+        status: 'delivered'
+      },
+      lastMessageAt: lastMessageTimestamp || new Date(),
       unreadCount: 0,
+      source: 'whatsapp',
+      metrics: {
+        totalMessages: 0,
+        incomingMessages: 0,
+        outgoingMessages: 0
+      },
       createdAt: new Date(),
       updatedAt: new Date()
     });

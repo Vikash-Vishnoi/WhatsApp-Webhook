@@ -31,30 +31,32 @@ exports.processIncomingMessage = async (webhookData) => {
 
     // Admin user ID for webhook-created conversations
     const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '68f927fe0837e17cb3a12024';
-    const businessPhoneId = webhookData.metadata?.phone_number_id || '897748750080236';
+    const businessPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || '897748750080236';
 
-    // Find or create conversation (using backend-compatible schema)
+    // Find or create conversation (using backend-compatible nested schema)
     console.log('🔍 Finding/creating conversation...');
     const conversation = await findOrCreateConversation({
-      phoneNumber: messageData.from,  // Changed from patientPhone
-      name: contactName,              // Changed from patientName
-      userId: ADMIN_USER_ID,          // Added userId
+      phoneNumber: messageData.from,
+      name: contactName,
+      userId: ADMIN_USER_ID,
       lastMessageText: messageData.text?.body || `[${messageData.type}]`,
       lastMessageTimestamp: new Date(parseInt(messageData.timestamp) * 1000)
     });
 
     console.log('💾 Conversation ID:', conversation._id);
 
-    // Prepare message document (backend-compatible schema)
+    // Prepare message document (backend-compatible schema with nested content)
     const messageDoc = {
       conversationId: conversation._id,
-      from: messageData.from,                    // Added 'from' field
-      to: businessPhoneId,                       // Added 'to' field
-      userId: ADMIN_USER_ID,                     // Added userId
+      from: messageData.from,
+      to: businessPhoneId,
+      userId: ADMIN_USER_ID,
       direction: 'incoming',
       type: messageData.type,
-      content: {                                 // Changed to nested content
-        text: messageData.text?.body || ''
+      content: {
+        text: messageData.text?.body || '',
+        mediaUrl: messageData.image?.link || messageData.video?.link || messageData.document?.link || null,
+        caption: messageData.image?.caption || messageData.video?.caption || null
       },
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
       whatsappMessageId: messageData.id,
