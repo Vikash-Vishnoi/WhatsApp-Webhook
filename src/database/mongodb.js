@@ -139,10 +139,10 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
   try {
     const database = await exports.connectToDatabase();
     const { ObjectId } = require('mongodb');
-    const Conversation = require('../../../../backend/models/Conversation');
+    const { normalizePhone } = require('../utils/phoneNormalizer');
     
     // Normalize phone number for consistent lookups
-    const phoneNormalized = Conversation.normalizePhone(phoneNumber);
+    const phoneNormalized = normalizePhone(phoneNumber);
     
     // Try to find existing conversation by normalized phone and userId
     let conversation = await database.collection('conversations').findOne({
