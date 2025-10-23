@@ -7,7 +7,7 @@
 const axios = require('axios');
 
 // Your main backend server URL (where your mobile app connects)
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 
 /**
  * Notify connected clients about new messages
