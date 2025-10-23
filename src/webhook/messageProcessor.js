@@ -30,7 +30,7 @@ exports.processIncomingMessage = async (webhookData) => {
     console.log('👤 Contact name:', contactName);
 
     // Admin user ID for webhook-created conversations
-    const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '68f927fe0837e17cb3a12024';
+    const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '68f9490fef1e28c3cb8a9f8b';
     const businessPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || '897748750080236';
 
     // Find or create conversation (using backend-compatible nested schema)
