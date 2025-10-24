@@ -1,9 +1,3 @@
-/**
- * MongoDB Database Handler - Conversation Model
- * 
- * Uses Conversation model with embedded messages
- */
-
 const { MongoClient, ObjectId } = require('mongodb');
 
 let db = null;
@@ -11,9 +5,6 @@ let client = null;
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsapp-marketing';
 
-/**
- * Connect to MongoDB database
- */
 exports.connectToDatabase = async () => {
   if (db) {
     console.log('ℹ️  Using existing database connection');
@@ -48,12 +39,8 @@ exports.connectToDatabase = async () => {
   }
 };
 
-/**
- * Create database indexes for optimal performance
- */
 async function createIndexes() {
   try {
-    // Indexes for Conversation collection
     await db.collection('conversations').createIndex({ 'contact.phoneNumber': 1, userId: 1 }, { unique: true });
     await db.collection('conversations').createIndex({ userId: 1, lastMessageAt: -1 });
     await db.collection('conversations').createIndex({ userId: 1, status: 1, lastMessageAt: -1 });
@@ -64,14 +51,10 @@ async function createIndexes() {
   }
 }
 
-/**
- * Save an incoming message directly to conversation's messages array
- */
 exports.saveMessageToConversation = async (conversationId, messageData) => {
   try {
     const database = await exports.connectToDatabase();
     
-    // Check if message already exists (duplicate webhook)
     const existingConv = await database.collection('conversations').findOne({
       _id: conversationId,
       'messages.whatsappMessageId': messageData.whatsappMessageId
@@ -82,7 +65,6 @@ exports.saveMessageToConversation = async (conversationId, messageData) => {
       return { duplicate: true };
     }
 
-    // Prepare message with _id for embedded document
     const messageDoc = {
       _id: new ObjectId(),
       ...messageData,
@@ -90,27 +72,34 @@ exports.saveMessageToConversation = async (conversationId, messageData) => {
       updatedAt: new Date()
     };
 
-    // Add message to conversation's messages array and update metadata
+    // Check current status to decide if we should auto-reopen
+    const current = await database.collection('conversations').findOne({ _id: conversationId });
+
+    const setFields = {
+      'lastMessage.text': messageData.content?.text || `[${messageData.type}]`,
+      'lastMessage.type': messageData.type,
+      'lastMessage.direction': 'incoming',
+      'lastMessage.timestamp': messageData.timestamp,
+      'lastMessage.status': 'delivered',
+      lastMessageAt: messageData.timestamp,
+      updatedAt: new Date(),
+      'conversationWindow.isOpen': true,
+      'conversationWindow.openedAt': messageData.timestamp,
+      'conversationWindow.expiresAt': new Date(messageData.timestamp.getTime() + 24 * 60 * 60 * 1000),
+      'conversationWindow.category': 'user_initiated'
+    };
+
+    if (current && (current.status === 'archived' || current.status === 'closed')) {
+      setFields['status'] = 'active';
+    }
+
     const result = await database.collection('conversations').updateOne(
       { _id: conversationId },
       {
         $push: {
           messages: messageDoc
         },
-        $set: {
-          'lastMessage.text': messageData.content?.text || `[${messageData.type}]`,
-          'lastMessage.type': messageData.type,
-          'lastMessage.direction': 'incoming',
-          'lastMessage.timestamp': messageData.timestamp,
-          'lastMessage.status': 'delivered',
-          lastMessageAt: messageData.timestamp,
-          updatedAt: new Date(),
-          // Open conversation window (24 hours from now)
-          'conversationWindow.isOpen': true,
-          'conversationWindow.openedAt': messageData.timestamp,
-          'conversationWindow.expiresAt': new Date(messageData.timestamp.getTime() + 24 * 60 * 60 * 1000),
-          'conversationWindow.category': 'user_initiated'
-        },
+        $set: setFields,
         $inc: {
           unreadCount: 1,
           'metrics.totalMessages': 1,
@@ -132,10 +121,6 @@ exports.saveMessageToConversation = async (conversationId, messageData) => {
   }
 };
 
-/**
- * Find existing conversation or create new one
- * Using Conversation model
- */
 exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessageText, lastMessageTimestamp }) => {
   try {
     const database = await exports.connectToDatabase();
@@ -143,7 +128,6 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
     
     const phoneNormalized = normalizePhone(phoneNumber);
     
-    // Try to find existing conversation
     let conversation = await database.collection('conversations').findOne({
       'contact.phoneNumber': phoneNormalized,
       userId: new ObjectId(userId),
@@ -155,7 +139,6 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
       return conversation;
     }
 
-    // Create new conversation with empty messages array
     console.log('📝 Creating new conversation for:', phoneNumber);
     const result = await database.collection('conversations').insertOne({
       contact: {
@@ -164,7 +147,7 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
       },
       userId: new ObjectId(userId),
       status: 'active',
-      messages: [], // Empty array - messages will be added via $push
+      messages: [],
       lastMessage: {
         text: lastMessageText || 'New conversation',
         type: 'text',
@@ -213,9 +196,6 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
   }
 };
 
-/**
- * Get conversation by ID (with all embedded messages)
- */
 exports.getConversation = async (conversationId) => {
   const database = await exports.connectToDatabase();
   return await database.collection('conversations').findOne({
@@ -224,9 +204,6 @@ exports.getConversation = async (conversationId) => {
   });
 };
 
-/**
- * Get messages for a conversation (extract from embedded array)
- */
 exports.getMessages = async (conversationId, limit = 50) => {
   const database = await exports.connectToDatabase();
   const conversation = await database.collection('conversations').findOne(
@@ -237,14 +214,10 @@ exports.getMessages = async (conversationId, limit = 50) => {
   return conversation?.messages || [];
 };
 
-/**
- * Update message status within conversation
- */
 exports.updateMessageStatus = async (whatsappMessageId, status, statusTimestamp) => {
   try {
     const database = await exports.connectToDatabase();
     
-    // Find conversation containing this message
     const conversation = await database.collection('conversations').findOne({
       'messages.whatsappMessageId': whatsappMessageId
     });
@@ -254,7 +227,6 @@ exports.updateMessageStatus = async (whatsappMessageId, status, statusTimestamp)
       return null;
     }
 
-    // Update the specific message's status
     const updateFields = {
       'messages.$.status': status,
       'messages.$.updatedAt': new Date()
@@ -284,9 +256,6 @@ exports.updateMessageStatus = async (whatsappMessageId, status, statusTimestamp)
   }
 };
 
-/**
- * Close database connection
- */
 exports.closeConnection = async () => {
   if (client) {
     await client.close();
@@ -296,7 +265,6 @@ exports.closeConnection = async () => {
   }
 };
 
-// Legacy support - map old saveMessage to new function
 exports.saveMessage = async (messageData) => {
   console.warn('⚠️  Using legacy saveMessage - please use saveMessageToConversation instead');
   return await exports.saveMessageToConversation(messageData.conversationId, messageData);

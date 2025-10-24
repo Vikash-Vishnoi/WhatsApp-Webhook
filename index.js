@@ -8,18 +8,15 @@ const { connectToDatabase } = require('./src/database/mongodb');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// Health check endpoint
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
@@ -43,13 +40,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Webhook verification endpoint (GET) - Meta will call this
 app.get('/webhook', verifyWebhook);
-
-// Webhook message handler (POST) - Meta will send messages here
 app.post('/webhook', handleWebhook);
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Not Found',
@@ -58,7 +51,6 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(500).json({ 
@@ -67,7 +59,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Database connection and server start
 console.log('🚀 Starting WhatsApp Webhook Server...');
 console.log('📍 Environment:', process.env.NODE_ENV || 'development');
 console.log('🔐 Verify Token:', process.env.WHATSAPP_VERIFY_TOKEN ? '✅ Set' : '❌ Missing');
@@ -87,7 +78,6 @@ connectToDatabase()
     process.exit(1);
   });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
   server.close(() => {

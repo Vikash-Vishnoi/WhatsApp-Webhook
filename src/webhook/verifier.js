@@ -1,10 +1,3 @@
-/**
- * WhatsApp Webhook Verification Handler
- * 
- * Meta will call this endpoint with a GET request to verify your webhook.
- * You must return the challenge value if the verify token matches.
- */
-
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'hospital_whatsapp_2024';
 
 exports.verifyWebhook = (req, res) => {
@@ -27,7 +20,6 @@ exports.verifyWebhook = (req, res) => {
       console.log('✅ Webhook verified successfully!');
       console.log('📤 Sending challenge response:', challenge);
       
-      // Respond with 200 OK and challenge token from the request
       res.status(200).send(challenge);
     } else {
       console.error('❌ Verification failed: Token mismatch');

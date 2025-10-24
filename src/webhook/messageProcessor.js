@@ -1,9 +1,3 @@
-/**
- * WhatsApp Message Processor
- * 
- * Saves messages directly to conversation's messages array
- */
-
 const { saveMessageToConversation, findOrCreateConversation } = require('../database/mongodb');
 const { notifyClients } = require('../services/notifier');
 
@@ -11,7 +5,6 @@ exports.processIncomingMessage = async (webhookData) => {
   try {
     console.log('🔍 Processing webhook data...');
     
-    // Extract message data from webhook
     const messageData = extractMessageData(webhookData);
     
     if (!messageData) {
@@ -23,17 +16,14 @@ exports.processIncomingMessage = async (webhookData) => {
     console.log('📝 Message type:', messageData.type);
     console.log('💬 Message content:', messageData.text?.body || messageData.type);
 
-    // Extract contact info
     const contactInfo = webhookData.contacts?.[0];
     const contactName = contactInfo?.profile?.name || messageData.from;
     
     console.log('👤 Contact name:', contactName);
 
-    // Admin user ID for webhook-created conversations
     const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '68f9490fef1e28c3cb8a9f8b';
     const businessPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || '897748750080236';
 
-    // Find or create conversation
     console.log('🔍 Finding/creating conversation...');
     const conversation = await findOrCreateConversation({
       phoneNumber: messageData.from,
@@ -45,7 +35,6 @@ exports.processIncomingMessage = async (webhookData) => {
 
     console.log('💾 Conversation ID:', conversation._id);
 
-    // Prepare message document for embedding
     const messageDoc = {
       whatsappMessageId: messageData.id,
       from: messageData.from,
@@ -57,7 +46,6 @@ exports.processIncomingMessage = async (webhookData) => {
       status: 'delivered'
     };
 
-    // Save message directly to conversation's messages array
     console.log('💾 Adding message to conversation...');
     const result = await saveMessageToConversation(conversation._id, messageDoc);
     
@@ -68,7 +56,6 @@ exports.processIncomingMessage = async (webhookData) => {
 
     console.log('✅ Message saved successfully:', result.messageId);
 
-    // Notify connected clients (real-time update)
     console.log('📡 Notifying connected clients...');
     await notifyClients({
       type: 'new_message',
@@ -89,18 +76,13 @@ exports.processIncomingMessage = async (webhookData) => {
   }
 };
 
-/**
- * Build message content object based on message type
- */
 function buildMessageContent(messageData) {
   const content = {
     text: messageData.text?.body || ''
   };
 
-  // Handle different message types
   switch (messageData.type) {
     case 'text':
-      // Already have text
       break;
 
     case 'image':
@@ -158,7 +140,6 @@ function buildMessageContent(messageData) {
       break;
 
     case 'interactive':
-      // Handle button or list reply
       if (messageData.interactive?.type === 'button_reply') {
         content.interactive = {
           type: 'button',
@@ -193,7 +174,6 @@ function buildMessageContent(messageData) {
       content.text = `[${messageData.type}]`;
   }
 
-  // Add context (reply info) if present
   if (messageData.context) {
     content.context = {
       messageId: messageData.context.id,
@@ -204,9 +184,6 @@ function buildMessageContent(messageData) {
   return content;
 }
 
-/**
- * Extract relevant message data from webhook payload
- */
 function extractMessageData(webhookData) {
   const message = webhookData.messages?.[0];
   
@@ -234,9 +211,6 @@ function extractMessageData(webhookData) {
   };
 }
 
-/**
- * Process status update webhooks (delivered, read, etc.)
- */
 exports.processStatusUpdate = async (webhookData) => {
   try {
     const { updateMessageStatus } = require('../database/mongodb');
