@@ -4,10 +4,10 @@
  * Receives incoming WhatsApp messages from Meta's servers
  * and processes them asynchronously.
  * 
- * ✅ UNIFIED VERSION - Uses ConversationUnified model with embedded messages
+ * Uses Conversation model with embedded messages
  */
 
-const { processIncomingMessage } = require('./messageProcessorUnified');
+const { processIncomingMessage } = require('./messageProcessor');
 
 exports.handleWebhook = async (req, res) => {
   console.log('📨 Webhook POST request received');
