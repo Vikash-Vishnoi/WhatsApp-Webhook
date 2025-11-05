@@ -35,6 +35,46 @@ exports.processIncomingMessage = async (webhookData) => {
 
     console.log('💾 Conversation ID:', conversation._id);
 
+    // ✅ SPECIAL HANDLING FOR REACTIONS - Add to existing message instead of creating new one
+    if (messageData.type === 'reaction') {
+      console.log('😊 Processing reaction...');
+      console.log('   Reaction emoji:', messageData.reaction?.emoji);
+      console.log('   Target message ID:', messageData.reaction?.message_id);
+      
+      const { addReactionToMessage } = require('../database/mongodb');
+      const result = await addReactionToMessage(
+        conversation._id,
+        messageData.reaction?.message_id,
+        {
+          from: messageData.from,
+          emoji: messageData.reaction?.emoji,
+          timestamp: new Date(parseInt(messageData.timestamp) * 1000)
+        }
+      );
+      
+      if (result.success) {
+        console.log('✅ Reaction added to message');
+        
+        // Notify clients about the reaction
+        console.log('📡 Notifying connected clients about reaction...');
+        await notifyClients({
+          type: 'message_reaction',
+          conversationId: conversation._id,
+          messageId: result.messageId,
+          reaction: {
+            from: messageData.from,
+            emoji: messageData.reaction?.emoji,
+            timestamp: new Date(parseInt(messageData.timestamp) * 1000)
+          }
+        });
+        
+        return result;
+      } else {
+        console.warn('⚠️  Could not add reaction, message not found. Creating as new message...');
+        // Fall through to create as regular message
+      }
+    }
+
     const messageDoc = {
       whatsappMessageId: messageData.id,
       from: messageData.from,
@@ -64,6 +104,24 @@ exports.processIncomingMessage = async (webhookData) => {
         ...messageDoc,
         _id: result.messageId
       }
+    });
+
+    // ✅ FEATURE: Push Notification for new incoming message
+    console.log('🔔 Sending push notification...');
+    await notifyClients({
+      type: 'notification:new_message',
+      title: contactName || messageData.from,
+      body: getMessagePreview(messageDoc),
+      data: {
+        conversationId: conversation._id,
+        messageId: result.messageId,
+        contactName: contactName,
+        contactPhone: messageData.from,
+        messageType: messageData.type,
+        timestamp: messageDoc.timestamp
+      },
+      userId: ADMIN_USER_ID,
+      badge: 1
     });
 
     console.log('✅ Message processing complete!');
@@ -184,6 +242,57 @@ function buildMessageContent(messageData) {
   return content;
 }
 
+/**
+ * Get message preview text for notification
+ */
+function getMessagePreview(message) {
+  const maxLength = 100;
+
+  switch (message.type) {
+    case 'text':
+      const text = message.content.text || '';
+      return text.length > maxLength 
+        ? text.substring(0, maxLength) + '...' 
+        : text;
+
+    case 'image':
+      return message.content.caption 
+        ? `📷 Image: ${message.content.caption}` 
+        : '📷 Image';
+
+    case 'video':
+      return message.content.caption 
+        ? `🎥 Video: ${message.content.caption}` 
+        : '🎥 Video';
+
+    case 'audio':
+      return '🎤 Audio message';
+
+    case 'document':
+      return `📄 Document: ${message.content.filename || 'file'}`;
+
+    case 'sticker':
+      return '😊 Sticker';
+
+    case 'location':
+      return `📍 Location: ${message.content.location?.name || 'Shared location'}`;
+
+    case 'contacts':
+      return `👤 Contact: ${message.content.contacts?.[0]?.name?.formatted_name || 'Contact'}`;
+
+    case 'interactive':
+      if (message.content.interactive?.type === 'button') {
+        return `🔘 ${message.content.text || 'Button reply'}`;
+      } else if (message.content.interactive?.type === 'list') {
+        return `📋 ${message.content.text || 'List reply'}`;
+      }
+      return 'Interactive message';
+
+    default:
+      return `[${message.type}]`;
+  }
+}
+
 function extractMessageData(webhookData) {
   const message = webhookData.messages?.[0];
   
@@ -213,7 +322,8 @@ function extractMessageData(webhookData) {
 
 exports.processStatusUpdate = async (webhookData) => {
   try {
-    const { updateMessageStatus } = require('../database/mongodb');
+    const { updateMessageStatus, updateCampaignRecipientStatus } = require('../database/mongodb');
+    const { notifyClients } = require('../services/notifier');
     
     const statuses = webhookData.statuses;
     if (!statuses || statuses.length === 0) {
@@ -224,11 +334,35 @@ exports.processStatusUpdate = async (webhookData) => {
     for (const status of statuses) {
       console.log(`📊 Status update: ${status.id} → ${status.status}`);
       
-      await updateMessageStatus(
+      const statusTimestamp = status.timestamp ? new Date(parseInt(status.timestamp) * 1000) : new Date();
+      
+      // Update conversation message status
+      const result = await updateMessageStatus(
         status.id,
         status.status,
-        status.timestamp ? new Date(parseInt(status.timestamp) * 1000) : new Date()
+        statusTimestamp
       );
+      
+      // ✅ FEATURE: Read Receipts - Also update campaign recipient status if this is a campaign message
+      await updateCampaignRecipientStatus(
+        status.id,
+        status.status,
+        statusTimestamp
+      );
+      
+      // ✅ FEATURE: Read Receipts - Notify clients when message status changes
+      if (result && (status.status === 'delivered' || status.status === 'read' || status.status === 'sent')) {
+        console.log(`📡 Notifying clients about ${status.status} status...`);
+        await notifyClients({
+          type: 'message_status_update',
+          conversationId: result.conversationId,
+          messageId: result.messageId,
+          whatsappMessageId: status.id,
+          status: status.status,
+          timestamp: statusTimestamp,
+          recipientId: status.recipient_id
+        });
+      }
     }
 
     console.log('✅ Status updates processed');
@@ -238,7 +372,68 @@ exports.processStatusUpdate = async (webhookData) => {
   }
 };
 
+/**
+ * ✅ FEATURE: Profile Updates Webhook
+ * Process WhatsApp profile changes (name, photo, about)
+ * Webhook field: 'contacts' with profile_update event
+ */
+exports.processProfileUpdate = async (webhookData) => {
+  try {
+    const { updateContactProfile } = require('../database/mongodb');
+    const { notifyClients } = require('../services/notifier');
+    
+    const contacts = webhookData.contacts;
+    if (!contacts || contacts.length === 0) {
+      console.log('⚠️  No contacts data in webhook');
+      return;
+    }
+
+    for (const contact of contacts) {
+      console.log('👤 Profile update detected:');
+      console.log('   Phone:', contact.wa_id);
+      console.log('   Name:', contact.profile?.name);
+
+      const profileData = {
+        phoneNumber: contact.wa_id,
+        name: contact.profile?.name || contact.wa_id,
+        profilePhoto: contact.profile?.photo_url || null,
+        about: contact.profile?.about || null,
+        updatedAt: new Date()
+      };
+
+      console.log('💾 Updating contact profile in database...');
+      const result = await updateContactProfile(profileData);
+
+      if (result.success) {
+        console.log('✅ Contact profile updated:', result.conversationId);
+        
+        // Notify clients about profile change
+        console.log('📡 Notifying clients about profile update...');
+        await notifyClients({
+          type: 'contact_profile_update',
+          conversationId: result.conversationId,
+          contact: {
+            phoneNumber: profileData.phoneNumber,
+            name: profileData.name,
+            profilePhoto: profileData.profilePhoto,
+            about: profileData.about
+          },
+          changes: result.changes || []
+        });
+      } else {
+        console.warn('⚠️  Could not update profile, conversation not found');
+      }
+    }
+
+    console.log('✅ Profile updates processed');
+  } catch (error) {
+    console.error('❌ Error processing profile update:', error);
+    throw error;
+  }
+};
+
 module.exports = { 
   processIncomingMessage: exports.processIncomingMessage,
-  processStatusUpdate: exports.processStatusUpdate
+  processStatusUpdate: exports.processStatusUpdate,
+  processProfileUpdate: exports.processProfileUpdate
 };

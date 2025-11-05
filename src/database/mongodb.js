@@ -227,6 +227,13 @@ exports.updateMessageStatus = async (whatsappMessageId, status, statusTimestamp)
       return null;
     }
 
+    // Find the message to get its _id
+    const message = conversation.messages.find(msg => msg.whatsappMessageId === whatsappMessageId);
+    if (!message) {
+      console.log('⚠️  Message not found in conversation');
+      return null;
+    }
+
     const updateFields = {
       'messages.$.status': status,
       'messages.$.updatedAt': new Date()
@@ -249,10 +256,89 @@ exports.updateMessageStatus = async (whatsappMessageId, status, statusTimestamp)
     );
 
     console.log('✅ Message status updated:', status);
-    return result;
+    
+    // Return conversation and message IDs for socket notification
+    return {
+      success: true,
+      conversationId: conversation._id,
+      messageId: message._id,
+      status: status
+    };
   } catch (error) {
     console.error('❌ Error updating message status:', error);
     throw error;
+  }
+};
+
+/**
+ * Update campaign recipient status based on message status
+ * This is called when a message sent via campaign gets status updates
+ */
+exports.updateCampaignRecipientStatus = async (whatsappMessageId, status, statusTimestamp) => {
+  try {
+    const database = await exports.connectToDatabase();
+    
+    // Find campaign with this message ID in recipients
+    const campaign = await database.collection('campaigns').findOne({
+      'recipients.whatsappMessageId': whatsappMessageId
+    });
+
+    if (!campaign) {
+      // Not a campaign message, skip
+      return null;
+    }
+
+    const updateFields = {
+      'recipients.$.status': status
+    };
+
+    if (status === 'sent') {
+      updateFields['recipients.$.sentAt'] = statusTimestamp || new Date();
+    } else if (status === 'delivered') {
+      updateFields['recipients.$.deliveredAt'] = statusTimestamp || new Date();
+    } else if (status === 'read') {
+      updateFields['recipients.$.readAt'] = statusTimestamp || new Date();
+    } else if (status === 'failed') {
+      // Failed reason will be set separately if available
+    }
+
+    await database.collection('campaigns').updateOne(
+      {
+        _id: campaign._id,
+        'recipients.whatsappMessageId': whatsappMessageId
+      },
+      {
+        $set: updateFields
+      }
+    );
+
+    // Update campaign stats
+    const updatedCampaign = await database.collection('campaigns').findOne({ _id: campaign._id });
+    const stats = {
+      total: updatedCampaign.recipients.length,
+      sent: updatedCampaign.recipients.filter(r => r.status === 'sent' || r.status === 'delivered' || r.status === 'read').length,
+      delivered: updatedCampaign.recipients.filter(r => r.status === 'delivered' || r.status === 'read').length,
+      read: updatedCampaign.recipients.filter(r => r.status === 'read').length,
+      failed: updatedCampaign.recipients.filter(r => r.status === 'failed').length,
+      pending: updatedCampaign.recipients.filter(r => r.status === 'pending').length
+    };
+
+    await database.collection('campaigns').updateOne(
+      { _id: campaign._id },
+      { $set: { stats } }
+    );
+
+    console.log(`✅ Campaign recipient status updated: ${whatsappMessageId} → ${status}`);
+    
+    return {
+      success: true,
+      campaignId: campaign._id,
+      status: status
+    };
+  } catch (error) {
+    console.error('❌ Error updating campaign recipient status:', error);
+    // Don't throw error - campaign update is non-critical
+    return null;
   }
 };
 
@@ -268,4 +354,224 @@ exports.closeConnection = async () => {
 exports.saveMessage = async (messageData) => {
   console.warn('⚠️  Using legacy saveMessage - please use saveMessageToConversation instead');
   return await exports.saveMessageToConversation(messageData.conversationId, messageData);
+};
+
+/**
+ * Add a reaction to an existing message
+ * @param {ObjectId} conversationId - The conversation ID
+ * @param {String} whatsappMessageId - The WhatsApp message ID to react to
+ * @param {Object} reactionData - { from, emoji, timestamp }
+ * @returns {Object} Result with success status and message ID
+ */
+exports.addReactionToMessage = async (conversationId, whatsappMessageId, reactionData) => {
+  try {
+    const database = await exports.connectToDatabase();
+    
+    console.log('🔍 Looking for message with WhatsApp ID:', whatsappMessageId);
+    
+    // Find the conversation containing this message
+    const conversation = await database.collection('conversations').findOne({
+      _id: conversationId,
+      'messages.whatsappMessageId': whatsappMessageId
+    });
+
+    if (!conversation) {
+      console.log('⚠️  Message not found for reaction');
+      return { success: false, error: 'Message not found' };
+    }
+
+    // Find the specific message to get its _id
+    const targetMessage = conversation.messages.find(msg => msg.whatsappMessageId === whatsappMessageId);
+    
+    if (!targetMessage) {
+      console.log('⚠️  Could not locate target message');
+      return { success: false, error: 'Message not found' };
+    }
+
+    console.log('✅ Found target message:', targetMessage._id);
+    console.log('   Adding reaction:', reactionData.emoji, 'from:', reactionData.from);
+
+    // Check if this user already reacted with this emoji (update instead of duplicate)
+    const existingReactionIndex = targetMessage.reactions?.findIndex(
+      r => r.from === reactionData.from && r.emoji === reactionData.emoji
+    );
+
+    let updateOperation;
+    
+    if (existingReactionIndex !== undefined && existingReactionIndex >= 0) {
+      // Update existing reaction timestamp
+      console.log('   Updating existing reaction');
+      updateOperation = {
+        $set: {
+          [`messages.$[msg].reactions.${existingReactionIndex}.timestamp`]: reactionData.timestamp,
+          updatedAt: new Date()
+        }
+      };
+    } else if (reactionData.emoji === '') {
+      // Empty emoji means remove reaction
+      console.log('   Removing reaction from user');
+      updateOperation = {
+        $pull: {
+          'messages.$[msg].reactions': { from: reactionData.from }
+        },
+        $set: {
+          updatedAt: new Date()
+        }
+      };
+    } else {
+      // Add new reaction
+      console.log('   Adding new reaction');
+      updateOperation = {
+        $push: {
+          'messages.$[msg].reactions': {
+            from: reactionData.from,
+            emoji: reactionData.emoji,
+            timestamp: reactionData.timestamp
+          }
+        },
+        $set: {
+          updatedAt: new Date()
+        }
+      };
+    }
+
+    const result = await database.collection('conversations').updateOne(
+      { _id: conversationId },
+      updateOperation,
+      {
+        arrayFilters: [
+          { 'msg.whatsappMessageId': whatsappMessageId }
+        ]
+      }
+    );
+
+    if (result.modifiedCount > 0) {
+      console.log('✅ Reaction added/updated successfully');
+      return { 
+        success: true, 
+        messageId: targetMessage._id,
+        conversationId: conversationId
+      };
+    } else {
+      console.log('⚠️  No changes made to conversation');
+      return { success: false, error: 'Update failed' };
+    }
+  } catch (error) {
+    console.error('❌ Error adding reaction:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * ✅ FEATURE: Profile Updates Webhook
+ * Update contact profile information (name, photo, about)
+ * Tracks profile change history
+ */
+exports.updateContactProfile = async (profileData) => {
+  try {
+    const database = await exports.connectToDatabase();
+    
+    console.log('🔍 Finding conversation for phone:', profileData.phoneNumber);
+    
+    // Find conversation by phone number
+    const conversation = await database.collection('conversations').findOne({
+      'contact.phoneNumber': profileData.phoneNumber,
+      isDeleted: false
+    });
+
+    if (!conversation) {
+      console.log('⚠️  No conversation found for this contact');
+      return { success: false, error: 'Conversation not found' };
+    }
+
+    console.log('✅ Found conversation:', conversation._id);
+    
+    // Track what changed
+    const changes = [];
+    const oldProfile = conversation.contact;
+    
+    if (oldProfile.name !== profileData.name) {
+      changes.push({
+        field: 'name',
+        oldValue: oldProfile.name,
+        newValue: profileData.name,
+        timestamp: profileData.updatedAt
+      });
+    }
+    
+    if (oldProfile.profilePhoto !== profileData.profilePhoto) {
+      changes.push({
+        field: 'profilePhoto',
+        oldValue: oldProfile.profilePhoto,
+        newValue: profileData.profilePhoto,
+        timestamp: profileData.updatedAt
+      });
+    }
+    
+    if (profileData.about && oldProfile.about !== profileData.about) {
+      changes.push({
+        field: 'about',
+        oldValue: oldProfile.about,
+        newValue: profileData.about,
+        timestamp: profileData.updatedAt
+      });
+    }
+
+    if (changes.length === 0) {
+      console.log('ℹ️  No changes detected in profile');
+      return { 
+        success: true, 
+        conversationId: conversation._id,
+        changes: []
+      };
+    }
+
+    console.log(`📝 Profile changes detected: ${changes.map(c => c.field).join(', ')}`);
+
+    // Update conversation contact info
+    const updateDoc = {
+      $set: {
+        'contact.name': profileData.name,
+        'contact.profilePhoto': profileData.profilePhoto,
+        updatedAt: profileData.updatedAt
+      },
+      $push: {
+        'contact.profileHistory': {
+          $each: changes,
+          $slice: -20 // Keep last 20 profile changes
+        }
+      }
+    };
+
+    // Add about field if provided
+    if (profileData.about) {
+      updateDoc.$set['contact.about'] = profileData.about;
+    }
+
+    const result = await database.collection('conversations').updateOne(
+      { _id: conversation._id },
+      updateDoc
+    );
+
+    if (result.modifiedCount > 0) {
+      console.log('✅ Contact profile updated successfully');
+      console.log('   Changes:', changes.map(c => `${c.field}: "${c.oldValue}" → "${c.newValue}"`).join(', '));
+      
+      return { 
+        success: true,
+        conversationId: conversation._id,
+        changes: changes
+      };
+    } else {
+      console.log('⚠️  No modifications made');
+      return { 
+        success: true,
+        conversationId: conversation._id,
+        changes: []
+      };
+    }
+  } catch (error) {
+    console.error('❌ Error updating contact profile:', error);
+    return { success: false, error: error.message };
+  }
 };

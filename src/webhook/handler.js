@@ -1,4 +1,4 @@
-const { processIncomingMessage } = require('./messageProcessor');
+const { processIncomingMessage, processProfileUpdate } = require('./messageProcessor');
 
 exports.handleWebhook = async (req, res) => {
   console.log('📨 Webhook POST request received');
@@ -24,6 +24,20 @@ exports.handleWebhook = async (req, res) => {
               if (change.field === 'messages') {
                 console.log('💬 Message event detected');
                 
+                // Check if this is a profile update (contacts array in messages)
+                if (change.value.contacts && change.value.contacts.length > 0) {
+                  const contact = change.value.contacts[0];
+                  // Profile update detected if profile object exists
+                  if (contact.profile) {
+                    console.log('👤 Profile update detected in message');
+                    processProfileUpdate(change.value)
+                      .catch(error => {
+                        console.error('❌ Error processing profile update:', error);
+                      });
+                  }
+                }
+                
+                // Process regular message
                 processIncomingMessage(change.value)
                   .catch(error => {
                     console.error('❌ Error processing message:', error);
