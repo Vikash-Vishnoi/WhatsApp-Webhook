@@ -16,11 +16,24 @@ exports.connectToDatabase = async () => {
     console.log('📍 URI:', MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@'));
     
     client = new MongoClient(MONGODB_URI, {
+      // TLS/SSL Configuration
       tls: true,
       tlsAllowInvalidCertificates: false,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 10000,
-      monitorCommands: false,
+      
+      // Connection Pool Configuration
+      maxPoolSize: 10,              // Maximum number of connections in pool
+      minPoolSize: 2,                // Minimum number of connections to maintain
+      maxIdleTimeMS: 30000,          // Close idle connections after 30 seconds
+      
+      // Timeout Configuration
+      serverSelectionTimeoutMS: 5000,   // Server selection timeout (5 seconds)
+      connectTimeoutMS: 10000,          // Initial connection timeout (10 seconds)
+      socketTimeoutMS: 45000,           // Socket timeout (45 seconds)
+      
+      // Additional Options
+      retryWrites: true,             // Retry write operations
+      retryReads: true,              // Retry read operations
+      monitorCommands: false,        // Disable command monitoring in production
     });
     
     await client.connect();
@@ -29,6 +42,18 @@ exports.connectToDatabase = async () => {
     db = client.db('whatsapp-marketing');
     console.log('✅ Connected to MongoDB successfully');
     console.log('📦 Database:', db.databaseName);
+    console.log('📊 Connection Pool: Min 2, Max 10 connections');
+    
+    // Monitor connection events
+    client.on('error', (error) => {
+      console.error('❌ MongoDB client error:', error.message);
+    });
+    
+    client.on('close', () => {
+      console.warn('⚠️  MongoDB connection closed');
+      db = null;
+      client = null;
+    });
     
     await createIndexes();
     

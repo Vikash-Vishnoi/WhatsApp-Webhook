@@ -1,6 +1,9 @@
 const { saveMessageToConversation, findOrCreateConversation } = require('../database/mongodb');
 const { notifyClients } = require('../services/notifier');
 
+// ✅ MULTI-BUSINESS: Import Business model for routing
+const Business = require('../../backend/models/Business');
+
 exports.processIncomingMessage = async (webhookData) => {
   try {
     console.log('🔍 Processing webhook data...');
@@ -21,14 +24,33 @@ exports.processIncomingMessage = async (webhookData) => {
     
     console.log('👤 Contact name:', contactName);
 
-    const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '68f9490fef1e28c3cb8a9f8b';
-    const businessPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || '897748750080236';
+    // ✅ MULTI-BUSINESS: Route webhook to correct business by phoneNumberId
+    const businessPhoneId = webhookData.metadata?.phone_number_id || webhookData.metadata?.display_phone_number;
+    
+    if (!businessPhoneId) {
+      console.error('❌ No phone_number_id in webhook metadata');
+      throw new Error('Missing phone_number_id in webhook');
+    }
+    
+    console.log('🔍 Finding business for phone number:', businessPhoneId);
+    const business = await Business.findByPhoneNumberId(businessPhoneId);
+    
+    if (!business) {
+      console.error('❌ No business found for phone number:', businessPhoneId);
+      throw new Error(`No business configured for phone number: ${businessPhoneId}`);
+    }
+    
+    console.log('✅ Routing webhook to business:', business.name);
+    
+    // Use business owner as the user for conversation assignment
+    const businessOwnerId = business.owner.toString();
 
     console.log('🔍 Finding/creating conversation...');
     const conversation = await findOrCreateConversation({
       phoneNumber: messageData.from,
       name: contactName,
-      userId: ADMIN_USER_ID,
+      userId: businessOwnerId,  // ✅ MULTI-BUSINESS: Use business owner
+      businessId: business._id,  // ✅ MULTI-BUSINESS: Associate with business
       lastMessageText: messageData.text?.body || `[${messageData.type}]`,
       lastMessageTimestamp: new Date(parseInt(messageData.timestamp) * 1000)
     });
@@ -78,12 +100,13 @@ exports.processIncomingMessage = async (webhookData) => {
     const messageDoc = {
       whatsappMessageId: messageData.id,
       from: messageData.from,
-      to: businessPhoneId,
+      to: business.whatsappConfig.phoneNumberId,  // ✅ MULTI-BUSINESS: Use business phone
       direction: 'incoming',
       type: messageData.type,
       content: buildMessageContent(messageData),
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
-      status: 'delivered'
+      status: 'delivered',
+      businessId: business._id  // ✅ MULTI-BUSINESS: Track business
     };
 
     console.log('💾 Adding message to conversation...');
@@ -118,9 +141,10 @@ exports.processIncomingMessage = async (webhookData) => {
         contactName: contactName,
         contactPhone: messageData.from,
         messageType: messageData.type,
-        timestamp: messageDoc.timestamp
+        timestamp: messageDoc.timestamp,
+        businessId: business._id  // ✅ MULTI-BUSINESS: Include business context
       },
-      userId: ADMIN_USER_ID,
+      userId: businessOwnerId,  // ✅ MULTI-BUSINESS: Notify business owner
       badge: 1
     });
 
@@ -432,8 +456,228 @@ exports.processProfileUpdate = async (webhookData) => {
   }
 };
 
+/**
+ * Process template status updates
+ */
+exports.processTemplateStatusUpdate = async (statusUpdate, business, requestId) => {
+  try {
+    const logger = require('../../backend/utils/logger');
+    const Template = require('../../backend/models/Template');
+    
+    logger.info('Processing template status update', {
+      requestId,
+      event: statusUpdate.event,
+      templateName: statusUpdate.message_template_name,
+      businessId: business._id.toString()
+    });
+
+    const template = await Template.findOne({
+      businessId: business._id,
+      whatsappTemplateId: statusUpdate.message_template_id
+    });
+
+    if (template) {
+      const previousStatus = template.status;
+      
+      switch (statusUpdate.event) {
+        case 'APPROVED':
+          template.status = 'approved';
+          template.approvedAt = new Date();
+          break;
+        case 'REJECTED':
+          template.status = 'rejected';
+          template.rejectionReason = statusUpdate.reason;
+          template.rejectedAt = new Date();
+          break;
+        case 'PENDING':
+          template.status = 'pending';
+          break;
+        case 'PAUSED':
+        case 'DISABLED':
+          template.status = 'paused';
+          template.pausedAt = new Date();
+          break;
+      }
+
+      await template.save();
+      
+      logger.info('Template status updated', {
+        requestId,
+        templateId: template._id.toString(),
+        previousStatus,
+        newStatus: template.status
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error processing template status update:', error);
+  }
+};
+
+/**
+ * Process account alerts
+ */
+exports.processAccountAlert = async (change, value, business, requestId) => {
+  try {
+    const logger = require('../../backend/utils/logger');
+    const AlertLog = require('../../backend/models/AlertLog');
+    const PhoneNumberHealth = require('../../backend/models/PhoneNumberHealth');
+    
+    logger.info('Processing account alert', {
+      requestId,
+      field: change.field,
+      event: value.event,
+      businessId: business._id.toString()
+    });
+
+    let severity = 'MEDIUM';
+    let alertType = 'ACCOUNT_ALERT';
+    let message = 'Account alert received';
+
+    if (change.field === 'phone_number_quality_update') {
+      const currentRating = value.current_limit || 'UNKNOWN';
+      
+      if (currentRating === 'RED' || value.event === 'FLAGGED') {
+        severity = 'CRITICAL';
+        alertType = 'QUALITY_RATING_RED';
+        message = `Phone number quality rating is RED. Immediate action required.`;
+      } else if (currentRating === 'YELLOW') {
+        severity = 'HIGH';
+        alertType = 'QUALITY_RATING_YELLOW';
+        message = `Phone number quality rating decreased to YELLOW.`;
+      }
+
+      // Update PhoneNumberHealth
+      await PhoneNumberHealth.findOneAndUpdate(
+        {
+          businessId: business._id,
+          phoneNumberId: value.phone_number_id
+        },
+        {
+          qualityRating: currentRating,
+          status: value.event === 'FLAGGED' ? 'FLAGGED' : 'CONNECTED',
+          $push: {
+            alerts: {
+              timestamp: new Date(),
+              alertType,
+              severity,
+              message,
+              event: value.event
+            }
+          },
+          lastCheckedAt: new Date()
+        },
+        { upsert: true }
+      );
+    }
+
+    // Create alert log
+    await AlertLog.create({
+      businessId: business._id,
+      userId: business.owner,
+      alertType,
+      severity,
+      title: alertType.replace(/_/g, ' '),
+      message,
+      whatsappData: {
+        phoneNumberId: value.phone_number_id,
+        displayPhoneNumber: value.display_phone_number,
+        currentRating: value.current_limit,
+        previousRating: value.previous_limit,
+        event: value.event,
+        rawData: value
+      },
+      status: 'UNREAD'
+    });
+
+    logger.info('Account alert processed', {
+      requestId,
+      alertType,
+      severity
+    });
+  } catch (error) {
+    console.error('❌ Error processing account alert:', error);
+  }
+};
+
+/**
+ * Process flow responses
+ */
+exports.processFlowResponse = async (message, metadata, business, requestId) => {
+  try {
+    const logger = require('../../backend/utils/logger');
+    const FlowResponse = require('../../backend/models/FlowResponse');
+    const Conversation = require('../../backend/models/Conversation');
+    
+    logger.info('Processing flow response', {
+      requestId,
+      messageId: message.id,
+      businessId: business._id.toString()
+    });
+
+    const nfmReply = message.interactive?.nfm_reply;
+    if (!nfmReply) return;
+
+    const { name, body, response_json } = nfmReply;
+
+    let responseData = {};
+    try {
+      responseData = response_json ? JSON.parse(response_json) : JSON.parse(body);
+    } catch (e) {
+      responseData = { raw_body: body };
+    }
+
+    const flowToken = responseData.flow_token || 
+                     message.interactive.flow_token || 
+                     message.context?.flow_token;
+
+    if (!flowToken) return;
+
+    const flowResponse = await FlowResponse.findByToken(flowToken);
+    if (!flowResponse) return;
+
+    const phoneNormalized = Conversation.normalizePhone(message.from);
+    flowResponse.contact.phoneNumber = phoneNormalized;
+
+    const formData = responseData.data || 
+                    responseData.screen_0_TextInput_0 || 
+                    responseData;
+
+    if (typeof formData === 'object') {
+      Object.entries(formData).forEach(([key, value]) => {
+        flowResponse.addResponse(key, value);
+      });
+    }
+
+    if (name === 'complete' || name === 'COMPLETE') {
+      await flowResponse.markCompleted();
+    } else {
+      flowResponse.status = 'in_progress';
+    }
+
+    flowResponse.rawWebhookData = {
+      messageId: message.id,
+      timestamp: message.timestamp,
+      interactive: message.interactive,
+      nfmReply
+    };
+
+    await flowResponse.save();
+
+    logger.info('Flow response processed', {
+      requestId,
+      flowResponseId: flowResponse._id.toString(),
+      status: flowResponse.status
+    });
+  } catch (error) {
+    console.error('❌ Error processing flow response:', error);
+  }
+};
+
 module.exports = { 
   processIncomingMessage: exports.processIncomingMessage,
   processStatusUpdate: exports.processStatusUpdate,
-  processProfileUpdate: exports.processProfileUpdate
+  processProfileUpdate: exports.processProfileUpdate,
+  processTemplateStatusUpdate: exports.processTemplateStatusUpdate,
+  processAccountAlert: exports.processAccountAlert,
+  processFlowResponse: exports.processFlowResponse
 };
