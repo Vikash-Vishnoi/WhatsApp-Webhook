@@ -5,7 +5,7 @@
  */
 
 const crypto = require('crypto');
-const Business = require('../../../backend/models/Business');
+const Business = require('../models/Business');
 
 /**
  * Middleware to verify webhook signature

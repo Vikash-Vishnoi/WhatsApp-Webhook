@@ -2,7 +2,7 @@ const { saveMessageToConversation, findOrCreateConversation } = require('../data
 const { notifyClients } = require('../services/notifier');
 
 // ✅ MULTI-BUSINESS: Import Business model for routing
-const Business = require('../../backend/models/Business');
+const Business = require('../models/Business');
 
 exports.processIncomingMessage = async (webhookData) => {
   try {
@@ -461,8 +461,8 @@ exports.processProfileUpdate = async (webhookData) => {
  */
 exports.processTemplateStatusUpdate = async (statusUpdate, business, requestId) => {
   try {
-    const logger = require('../../backend/utils/logger');
-    const Template = require('../../backend/models/Template');
+    const logger = require('../utils/logger');
+    const Template = require('../models/Template');
     
     logger.info('Processing template status update', {
       requestId,
@@ -518,9 +518,9 @@ exports.processTemplateStatusUpdate = async (statusUpdate, business, requestId) 
  */
 exports.processAccountAlert = async (change, value, business, requestId) => {
   try {
-    const logger = require('../../backend/utils/logger');
-    const AlertLog = require('../../backend/models/AlertLog');
-    const PhoneNumberHealth = require('../../backend/models/PhoneNumberHealth');
+    const logger = require('../utils/logger');
+    const AlertLog = require('../models/AlertLog');
+    const PhoneNumberHealth = require('../models/PhoneNumberHealth');
     
     logger.info('Processing account alert', {
       requestId,
@@ -604,9 +604,9 @@ exports.processAccountAlert = async (change, value, business, requestId) => {
  */
 exports.processFlowResponse = async (message, metadata, business, requestId) => {
   try {
-    const logger = require('../../backend/utils/logger');
-    const FlowResponse = require('../../backend/models/FlowResponse');
-    const Conversation = require('../../backend/models/Conversation');
+    const logger = require('../utils/logger');
+    const FlowResponse = require('../models/FlowResponse');
+    const Conversation = require('../models/Conversation');
     
     logger.info('Processing flow response', {
       requestId,
