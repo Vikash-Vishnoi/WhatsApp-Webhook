@@ -5,7 +5,7 @@
  */
 
 const crypto = require('crypto');
-const Business = require('../models/Business');
+const businessCache = require('../utils/businessCache');
 
 /**
  * Middleware to verify webhook signature
@@ -52,11 +52,8 @@ async function verifySignatureMiddleware(req, res, next) {
       });
     }
 
-    // Find business with this phone number ID
-    const business = await Business.findOne({
-      'whatsappConfig.phoneNumberId': phoneNumberId,
-      status: 'active'
-    });
+    // Find business with this phone number ID (using cache)
+    const business = await businessCache.getByPhoneNumberId(phoneNumberId);
 
     if (!business) {
       console.error('❌ No business found for phone number', {

@@ -1,4 +1,4 @@
-const Business = require('../models/Business');
+const businessCache = require('../utils/businessCache');
 
 /**
  * Multi-Business Webhook Verification
@@ -28,12 +28,8 @@ exports.verifyWebhook = async (req, res) => {
   }
 
   try {
-    // ✅ MULTI-BUSINESS: Find any active business with this verify token
-    const business = await Business.findOne({
-      'whatsappConfig.verifyToken': token,
-      status: 'active',
-      isDeleted: false
-    });
+    // ✅ MULTI-BUSINESS: Find any active business with this verify token (using cache)
+    const business = await businessCache.getByVerifyToken(token);
 
     if (business) {
       console.log('✅ Webhook verified successfully for business:', business.name);

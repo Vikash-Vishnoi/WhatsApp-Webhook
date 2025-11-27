@@ -11,7 +11,7 @@ const {
   processTrackingEvent,
   processUserPreference
 } = require('./messageProcessor');
-const Business = require('../models/Business');
+const businessCache = require('../utils/businessCache');
 const logger = require('../utils/logger');
 
 exports.handleWebhook = async (req, res) => {
@@ -34,10 +34,8 @@ exports.handleWebhook = async (req, res) => {
         for (const entry of body.entry) {
           console.log('📋 Processing entry:', entry.id);
           
-          // Find business by WABA ID
-          const business = await Business.findOne({ 
-            'whatsappConfig.wabaId': entry.id 
-          });
+          // Find business by WABA ID (using cache)
+          const business = await businessCache.getByWabaId(entry.id);
           
           if (!business) {
             console.error('❌ No business found for WABA ID:', entry.id);

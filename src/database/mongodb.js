@@ -1,4 +1,5 @@
 const { MongoClient, ObjectId } = require('mongodb');
+const mongoose = require('mongoose');
 
 let db = null;
 let client = null;
@@ -43,6 +44,17 @@ exports.connectToDatabase = async () => {
     console.log('✅ Connected to MongoDB successfully');
     console.log('📦 Database:', db.databaseName);
     console.log('📊 Connection Pool: Min 2, Max 10 connections');
+    
+    // Connect Mongoose for Business model
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        maxPoolSize: 10,
+        minPoolSize: 2
+      });
+      console.log('✅ Mongoose connected successfully');
+    }
     
     // Monitor connection events
     client.on('error', (error) => {

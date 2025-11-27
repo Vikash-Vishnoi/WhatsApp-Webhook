@@ -1,8 +1,8 @@
 const { saveMessageToConversation, findOrCreateConversation } = require('../database/mongodb');
 const { notifyClients } = require('../services/notifier');
 
-// ✅ MULTI-BUSINESS: Import Business model for routing
-const Business = require('../models/Business');
+// ✅ MULTI-BUSINESS: Import business cache for routing
+const businessCache = require('../utils/businessCache');
 
 exports.processIncomingMessage = async (webhookData) => {
   try {
@@ -33,7 +33,7 @@ exports.processIncomingMessage = async (webhookData) => {
     }
     
     console.log('🔍 Finding business for phone number:', businessPhoneId);
-    const business = await Business.findByPhoneNumberId(businessPhoneId);
+    const business = await businessCache.getByPhoneNumberId(businessPhoneId);
     
     if (!business) {
       console.error('❌ No business found for phone number:', businessPhoneId);
