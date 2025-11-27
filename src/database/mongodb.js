@@ -158,7 +158,7 @@ exports.saveMessageToConversation = async (conversationId, messageData) => {
   }
 };
 
-exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessageText, lastMessageTimestamp }) => {
+exports.findOrCreateConversation = async ({ phoneNumber, name, userId, businessId, lastMessageText, lastMessageTimestamp }) => {
   try {
     const database = await exports.connectToDatabase();
     const { normalizePhone } = require('../utils/phoneNormalizer');
@@ -168,6 +168,7 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
     let conversation = await database.collection('conversations').findOne({
       'contact.phoneNumber': phoneNormalized,
       userId: new ObjectId(userId),
+      businessId: new ObjectId(businessId),
       isDeleted: false
     });
 
@@ -183,6 +184,7 @@ exports.findOrCreateConversation = async ({ phoneNumber, name, userId, lastMessa
         name: name || phoneNumber
       },
       userId: new ObjectId(userId),
+      businessId: new ObjectId(businessId),
       status: 'active',
       messages: [],
       lastMessage: {
