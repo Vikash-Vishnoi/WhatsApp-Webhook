@@ -520,7 +520,7 @@ exports.processAccountAlert = async (change, value, business, requestId) => {
   try {
     const logger = require('../utils/logger');
     const AlertLog = require('../models/AlertLog');
-    const PhoneNumberHealth = require('../models/PhoneNumberHealth');
+    const Business = require('../models/Business');
     
     logger.info('Processing account alert', {
       requestId,
@@ -546,28 +546,14 @@ exports.processAccountAlert = async (change, value, business, requestId) => {
         message = `Phone number quality rating decreased to YELLOW.`;
       }
 
-      // Update PhoneNumberHealth
-      await PhoneNumberHealth.findOneAndUpdate(
-        {
-          businessId: business._id,
-          phoneNumberId: value.phone_number_id
-        },
-        {
-          qualityRating: currentRating,
-          status: value.event === 'FLAGGED' ? 'FLAGGED' : 'CONNECTED',
-          $push: {
-            alerts: {
-              timestamp: new Date(),
-              alertType,
-              severity,
-              message,
-              event: value.event
-            }
-          },
-          lastCheckedAt: new Date()
-        },
-        { upsert: true }
-      );
+      // Update Business phone quality
+      await business.updatePhoneQuality({
+        qualityRating: currentRating,
+        messagingLimitTier: value.messaging_limit_tier,
+        currentLimit: value.current_limit
+      });
+      
+      await business.save();
     }
 
     // Create alert log
