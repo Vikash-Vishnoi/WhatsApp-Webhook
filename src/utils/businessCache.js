@@ -27,8 +27,7 @@ class BusinessCache {
     console.log('🔍 Business cache miss, querying database:', phoneNumberId);
     const business = await Business.findOne({
       'whatsappConfig.phoneNumberId': phoneNumberId,
-      status: 'active',
-      isDeleted: false
+      status: 'active'
     }).select('+whatsappConfig.appSecret +whatsappConfig.verifyToken');
     
     if (business) {
@@ -56,8 +55,7 @@ class BusinessCache {
     console.log('🔍 Business token cache miss, querying database');
     const business = await Business.findOne({
       'whatsappConfig.verifyToken': verifyToken,
-      status: 'active',
-      isDeleted: false
+      status: 'active'
     });
     
     if (business) {
@@ -85,8 +83,7 @@ class BusinessCache {
     console.log('🔍 Business WABA cache miss, querying database:', wabaId);
     const business = await Business.findOne({
       'whatsappConfig.wabaId': wabaId,
-      status: 'active',
-      isDeleted: false
+      status: 'active'
     });
     
     if (business) {

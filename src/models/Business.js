@@ -236,8 +236,7 @@ businessSchema.index({ status: 1, isDeleted: 1 });
 businessSchema.statics.findByPhoneNumberId = async function(phoneNumberId) {
   return await this.findOne({
     'whatsappConfig.phoneNumberId': phoneNumberId,
-    status: 'active',
-    isDeleted: false
+    status: 'active'
   });
 };
 
