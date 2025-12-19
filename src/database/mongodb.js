@@ -355,7 +355,7 @@ exports.updateCampaignRecipientStatus = async (whatsappMessageId, status, status
     const updatedCampaign = await database.collection('campaigns').findOne({ _id: campaign._id });
     const stats = {
       total: updatedCampaign.recipients.length,
-      sent: updatedCampaign.recipients.filter(r => r.status === 'sent' || r.status === 'delivered' || r.status === 'read').length,
+      sent: updatedCampaign.recipients.filter(r => r.status === 'sent').length,
       delivered: updatedCampaign.recipients.filter(r => r.status === 'delivered' || r.status === 'read').length,
       read: updatedCampaign.recipients.filter(r => r.status === 'read').length,
       failed: updatedCampaign.recipients.filter(r => r.status === 'failed').length,
