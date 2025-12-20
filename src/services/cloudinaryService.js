@@ -89,6 +89,8 @@ class CloudinaryService {
         overwrite: false,
         use_filename: true,
         unique_filename: true,
+        access_mode: 'public', // Ensure public access for WhatsApp
+        type: 'upload', // Public upload type
         // Optimization settings
         quality: 'auto',
         fetch_format: 'auto'
