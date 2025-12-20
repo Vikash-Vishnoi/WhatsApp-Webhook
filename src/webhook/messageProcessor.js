@@ -170,14 +170,14 @@ async function buildMessageContent(messageData, businessId) {
 
     case 'image':
       // Upload to Cloudinary for permanent storage
-      if (messageData.image?.link) {
+      if (messageData.image?.url) {
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.image.link,
+          messageData.image.url,
           messageData.image.mime_type,
           `image-${messageData.id}.${messageData.image.mime_type?.split('/')[1] || 'jpg'}`,
           businessId
         );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.image.link;
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.image.url;
         content.cloudinaryPublicId = cloudinaryResult.publicId;
       }
       content.mediaId = messageData.image?.id;
@@ -188,14 +188,14 @@ async function buildMessageContent(messageData, businessId) {
 
     case 'video':
       // Upload to Cloudinary for permanent storage
-      if (messageData.video?.link) {
+      if (messageData.video?.url) {
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.video.link,
+          messageData.video.url,
           messageData.video.mime_type,
           `video-${messageData.id}.${messageData.video.mime_type?.split('/')[1] || 'mp4'}`,
           businessId
         );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.video.link;
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.video.url;
         content.cloudinaryPublicId = cloudinaryResult.publicId;
       }
       content.mediaId = messageData.video?.id;
@@ -206,14 +206,14 @@ async function buildMessageContent(messageData, businessId) {
 
     case 'audio':
       // Upload to Cloudinary for permanent storage
-      if (messageData.audio?.link) {
+      if (messageData.audio?.url) {
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.audio.link,
+          messageData.audio.url,
           messageData.audio.mime_type,
           `audio-${messageData.id}.${messageData.audio.mime_type?.split('/')[1] || 'ogg'}`,
           businessId
         );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.audio.link;
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.audio.url;
         content.cloudinaryPublicId = cloudinaryResult.publicId;
       }
       content.mediaId = messageData.audio?.id;
@@ -223,14 +223,14 @@ async function buildMessageContent(messageData, businessId) {
 
     case 'document':
       // Upload to Cloudinary for permanent storage
-      if (messageData.document?.link) {
+      if (messageData.document?.url) {
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.document.link,
+          messageData.document.url,
           messageData.document.mime_type,
           messageData.document.filename || `document-${messageData.id}.pdf`,
           businessId
         );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.document.link;
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.document.url;
         content.cloudinaryPublicId = cloudinaryResult.publicId;
       }
       content.mediaId = messageData.document?.id;
