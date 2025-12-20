@@ -121,22 +121,9 @@ class CloudinaryService {
 
       console.log('☁️  Uploaded to Cloudinary:', result.secure_url);
 
-      // For raw resources (documents), generate authenticated signed URL
-      // This bypasses the "untrusted customer" restriction
-      let deliveryUrl = result.secure_url;
-      
-      if (resourceType === 'raw') {
-        // Generate signed URL valid for 1 year (for WhatsApp long-term access)
-        const expiresAt = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60); // 1 year from now
-        deliveryUrl = cloudinary.url(result.public_id, {
-          resource_type: 'raw',
-          type: 'upload',
-          sign_url: true,
-          secure: true,
-          expires_at: expiresAt
-        });
-        console.log('🔐 Generated signed URL for document (valid 1 year)');
-      }
+      // Use the direct secure URL (already public due to access_mode: 'public')
+      // No need for signed URLs which cause WhatsApp 401 errors
+      const deliveryUrl = result.secure_url;
 
       return {
         success: true,
