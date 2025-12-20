@@ -70,11 +70,16 @@ class CloudinaryService {
       // Convert buffer to base64 data URI
       const base64Data = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
 
+      // Extract file extension
+      const fileExtension = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+      const baseFilename = filename.replace(/\.[^/.]+$/, '');
+
       // Upload to Cloudinary
       const result = await cloudinary.uploader.upload(base64Data, {
         resource_type: resourceType,
         folder: folder,
-        public_id: `${Date.now()}-${filename.replace(/\.[^/.]+$/, '')}`,
+        public_id: `${Date.now()}-${baseFilename}`,
+        format: fileExtension || undefined, // Preserve original file extension
         overwrite: false,
         use_filename: true,
         unique_filename: true,
