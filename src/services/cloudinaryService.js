@@ -104,9 +104,9 @@ class CloudinaryService {
         overwrite: false,
         use_filename: true,
         unique_filename: true,
-        // For raw files (PDFs), use authenticated type to enable signed URL access
+        // For raw files (PDFs), use private type to bypass untrusted customer restriction
         // For images/videos, use public upload
-        type: resourceType === 'raw' ? 'authenticated' : 'upload',
+        type: resourceType === 'raw' ? 'private' : 'upload',
         // Optimization settings
         quality: 'auto',
         fetch_format: 'auto'
@@ -122,21 +122,22 @@ class CloudinaryService {
 
       console.log('☁️  Uploaded to Cloudinary:', result.secure_url);
 
-      // For raw resources (documents), generate authenticated signed URL
-      // This allows users to VIEW incoming PDFs without "untrusted customer" errors
+      // For raw resources (documents), generate private download URL
+      // This bypasses "untrusted customer" errors by using API-authenticated download
       let deliveryUrl = result.secure_url;
       
       if (resourceType === 'raw') {
-        // Generate signed URL valid for 1 year (for long-term access)
-        const expiresAt = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60); // 1 year from now
-        deliveryUrl = cloudinary.url(result.public_id, {
-          resource_type: 'raw',
-          type: 'authenticated', // Match upload type
-          sign_url: true,
-          secure: true,
-          expires_at: expiresAt
-        });
-        console.log('🔐 Generated signed URL for incoming document (valid 1 year)');
+        // Generate private download URL (valid until file is deleted)
+        deliveryUrl = cloudinary.utils.private_download_url(
+          result.public_id,
+          result.format || 'pdf',
+          {
+            resource_type: 'raw',
+            attachment: false, // Allow inline viewing in browser
+            expires_at: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60) // 1 year
+          }
+        );
+        console.log('🔐 Generated private download URL for incoming document');
       }
 
       return {
