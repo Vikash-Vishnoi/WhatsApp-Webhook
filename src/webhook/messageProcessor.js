@@ -415,10 +415,16 @@ async function buildMessageContent(messageData, businessId, business) {
       
       if (docMediaUrl) {
         console.log('✅ Got document URL, uploading to Cloudinary...');
+        
+        // Clean filename - remove timestamp prefix if it exists (from forwarded/resent messages)
+        let cleanFilename = messageData.document.filename || `document-${messageData.id}.pdf`;
+        // Remove timestamp prefix pattern like "1766235980663-" from filename
+        cleanFilename = cleanFilename.replace(/^\d{13,}-/, '');
+        
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
           docMediaUrl,
           messageData.document.mime_type,
-          messageData.document.filename || `document-${messageData.id}.pdf`,
+          cleanFilename,
           businessId,
           docAccessToken
         );
@@ -444,7 +450,10 @@ async function buildMessageContent(messageData, businessId, business) {
       content.mediaId = messageData.document?.id;
       content.mediaType = 'document';
       content.mimeType = messageData.document?.mime_type;
-      content.filename = messageData.document?.filename;
+      // Clean filename - remove timestamp prefix if present
+      content.filename = messageData.document?.filename ? 
+        messageData.document.filename.replace(/^\d{13,}-/, '') : 
+        undefined;
       content.caption = messageData.document?.caption;
       break;
 
