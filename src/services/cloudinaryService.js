@@ -104,8 +104,9 @@ class CloudinaryService {
         overwrite: false,
         use_filename: true,
         unique_filename: true,
-        access_mode: 'public', // Ensure public access for WhatsApp
-        type: 'upload', // Public upload type
+        // For raw files (PDFs), use authenticated type to enable signed URL access
+        // For images/videos, use public upload
+        type: resourceType === 'raw' ? 'authenticated' : 'upload',
         // Optimization settings
         quality: 'auto',
         fetch_format: 'auto'
@@ -130,7 +131,7 @@ class CloudinaryService {
         const expiresAt = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60); // 1 year from now
         deliveryUrl = cloudinary.url(result.public_id, {
           resource_type: 'raw',
-          type: 'upload',
+          type: 'authenticated', // Match upload type
           sign_url: true,
           secure: true,
           expires_at: expiresAt
