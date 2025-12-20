@@ -101,7 +101,7 @@ exports.processIncomingMessage = async (webhookData) => {
       whatsappMessageId: messageData.id,
       from: messageData.from,
       to: business.whatsappConfig.phoneNumberId,  // ✅ MULTI-BUSINESS: Use business phone
-      direction: 'incoming',
+      direction: 'in',
       type: messageData.type,
       content: buildMessageContent(messageData),
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
