@@ -74,12 +74,18 @@ class CloudinaryService {
       const fileExtension = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
       const baseFilename = filename.replace(/\.[^/.]+$/, '');
 
+      // For raw resources (PDFs, docs), include extension in public_id
+      // For images/videos, use format parameter
+      const publicId = resourceType === 'raw' && fileExtension
+        ? `${Date.now()}-${baseFilename}.${fileExtension}`
+        : `${Date.now()}-${baseFilename}`;
+
       // Upload to Cloudinary
       const result = await cloudinary.uploader.upload(base64Data, {
         resource_type: resourceType,
         folder: folder,
-        public_id: `${Date.now()}-${baseFilename}`,
-        format: fileExtension || undefined, // Preserve original file extension
+        public_id: publicId,
+        format: resourceType !== 'raw' && fileExtension ? fileExtension : undefined,
         overwrite: false,
         use_filename: true,
         unique_filename: true,
@@ -122,10 +128,8 @@ class CloudinaryService {
     if (mimeType.startsWith('video/')) return 'video';
     if (mimeType.startsWith('audio/')) return 'video'; // Cloudinary handles audio as video
     
-    // Use 'image' for PDFs to allow inline viewing, 'raw' for other documents
-    if (mimeType === 'application/pdf') return 'image';
-    
-    return 'raw'; // For other documents
+    // Use 'raw' for documents (PDFs, docs, etc)
+    return 'raw';
   }
 
   /**
