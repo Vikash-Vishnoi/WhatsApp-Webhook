@@ -100,10 +100,21 @@ async function verifySignatureMiddleware(req, res, next) {
         expectedSignature: expectedSignature.substring(0, 20) + '...'
       });
       
-      return res.status(401).json({ 
-        error: 'Unauthorized',
-        message: 'Invalid webhook signature' 
-      });
+      // Check if signature verification is required
+      const requireSignature = process.env.REQUIRE_SIGNATURE === 'true';
+      
+      if (requireSignature) {
+        return res.status(401).json({ 
+          error: 'Unauthorized',
+          message: 'Invalid webhook signature' 
+        });
+      } else {
+        console.warn('⚠️  Signature mismatch but REQUIRE_SIGNATURE=false, continuing anyway');
+        // Allow request to proceed despite invalid signature
+        req.business = business;
+        req.requestId = requestId;
+        return next();
+      }
     }
 
     console.log('✅ Signature verified successfully', {
