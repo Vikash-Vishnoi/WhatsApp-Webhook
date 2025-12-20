@@ -80,8 +80,8 @@ class CloudinaryService {
         ? `${Date.now()}-${baseFilename}.${fileExtension}`
         : `${Date.now()}-${baseFilename}`;
 
-      // Upload to Cloudinary
-      const result = await cloudinary.uploader.upload(base64Data, {
+      // Upload options
+      const uploadOptions = {
         resource_type: resourceType,
         folder: folder,
         public_id: publicId,
@@ -92,7 +92,15 @@ class CloudinaryService {
         // Optimization settings
         quality: 'auto',
         fetch_format: 'auto'
-      });
+      };
+
+      // For PDFs, add flags for better browser compatibility
+      if (mimeType === 'application/pdf') {
+        uploadOptions.flags = 'attachment:false'; // Allow inline viewing
+      }
+
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(base64Data, uploadOptions);
 
       console.log('☁️  Uploaded to Cloudinary:', result.secure_url);
 
