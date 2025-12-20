@@ -122,7 +122,10 @@ class CloudinaryService {
     if (mimeType.startsWith('video/')) return 'video';
     if (mimeType.startsWith('audio/')) return 'video'; // Cloudinary handles audio as video
     
-    return 'raw'; // For documents and other files
+    // Use 'image' for PDFs to allow inline viewing, 'raw' for other documents
+    if (mimeType === 'application/pdf') return 'image';
+    
+    return 'raw'; // For other documents
   }
 
   /**
