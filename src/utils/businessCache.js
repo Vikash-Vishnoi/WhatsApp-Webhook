@@ -84,7 +84,7 @@ class BusinessCache {
     const business = await Business.findOne({
       'whatsappConfig.wabaId': wabaId,
       status: 'active'
-    });
+    }).select('+whatsappConfig.appSecret +whatsappConfig.verifyToken +whatsappConfig.accessToken');
     
     if (business) {
       this.cache.set(cacheKey, {
