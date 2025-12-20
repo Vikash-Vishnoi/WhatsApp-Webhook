@@ -99,13 +99,22 @@ exports.processIncomingMessage = async (webhookData) => {
       }
     }
 
+    console.log('🔧 Building message content for type:', messageData.type);
+    const messageContent = await buildMessageContent(messageData, business._id.toString(), business);
+    console.log('📦 Message content built:', {
+      hasMediaUrl: !!messageContent.mediaUrl,
+      hasText: !!messageContent.text,
+      mediaType: messageContent.mediaType,
+      keys: Object.keys(messageContent)
+    });
+    
     const messageDoc = {
       whatsappMessageId: messageData.id,
       from: messageData.from,
       to: business.whatsappConfig.phoneNumberId,  // ✅ MULTI-BUSINESS: Use business phone
       direction: 'in',
       type: messageData.type,
-      content: await buildMessageContent(messageData, business._id.toString(), business),
+      content: messageContent,
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
       status: 'delivered',
       businessId: business._id  // ✅ MULTI-BUSINESS: Track business
@@ -161,12 +170,24 @@ exports.processIncomingMessage = async (webhookData) => {
 };
 
 async function buildMessageContent(messageData, businessId, business) {
+  console.log('🏗️ buildMessageContent called:', {
+    type: messageData.type,
+    hasImage: !!messageData.image,
+    hasVideo: !!messageData.video,
+    hasAudio: !!messageData.audio,
+    hasDocument: !!messageData.document,
+    businessId: businessId,
+    hasBusiness: !!business,
+    hasAccessToken: !!business?.whatsappConfig?.accessToken
+  });
+  
   const content = {
     text: messageData.text?.body || ''
   };
 
   switch (messageData.type) {
     case 'text':
+      console.log('📝 Processing text message');
       break;
 
     case 'image':
@@ -1055,7 +1076,7 @@ exports.processMessageEcho = async (webhookData, business, requestId) => {
       sourceDevice: webhookData.source_device,
       sourceApp: webhookData.source_app,
       type: message.type,
-      content: buildMessageContent(message),
+      content: buildMessageContentSimple(message),
       status: 'sent',
       sentAt: new Date(parseInt(message.timestamp) * 1000),
       rawWebhookData: webhookData
@@ -1085,9 +1106,10 @@ exports.processMessageEcho = async (webhookData, business, requestId) => {
 };
 
 /**
- * Build message content from message data (helper function)
+ * Build message content from message data (simple helper for echoes)
+ * Does NOT download media - just uses direct links
  */
-function buildMessageContent(messageData) {
+function buildMessageContentSimple(messageData) {
   const content = {
     text: messageData.text?.body || ''
   };
