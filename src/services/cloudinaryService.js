@@ -21,14 +21,21 @@ class CloudinaryService {
    * @param {string} mimeType - MIME type of the media
    * @param {string} filename - Original filename
    * @param {string} businessId - Business ID for folder organization
+   * @param {string} accessToken - WhatsApp access token for authenticated download
    * @returns {Promise<Object>} Upload result with permanent URL
    */
-  async uploadFromWhatsAppUrl(whatsappMediaUrl, mimeType, filename, businessId) {
+  async uploadFromWhatsAppUrl(whatsappMediaUrl, mimeType, filename, businessId, accessToken) {
     try {
-      console.log('📥 Downloading media from WhatsApp:', whatsappMediaUrl);
+      console.log('📥 Downloading media from WhatsApp:', whatsappMediaUrl.substring(0, 50) + '...');
       
-      // Download media from WhatsApp
+      // Download media from WhatsApp with authorization
+      const headers = {};
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+      
       const response = await axios.get(whatsappMediaUrl, {
+        headers,
         responseType: 'arraybuffer',
         timeout: 30000 // 30 second timeout
       });

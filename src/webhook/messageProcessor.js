@@ -1,6 +1,7 @@
 const { saveMessageToConversation, findOrCreateConversation } = require('../database/mongodb');
 const { notifyClients } = require('../services/notifier');
 const cloudinaryService = require('../services/cloudinaryService');
+const { getMediaUrl, downloadMedia } = require('../services/whatsappMediaService');
 
 // ✅ MULTI-BUSINESS: Import business cache for routing
 const businessCache = require('../utils/businessCache');
@@ -104,7 +105,7 @@ exports.processIncomingMessage = async (webhookData) => {
       to: business.whatsappConfig.phoneNumberId,  // ✅ MULTI-BUSINESS: Use business phone
       direction: 'in',
       type: messageData.type,
-      content: await buildMessageContent(messageData, business._id.toString()),
+      content: await buildMessageContent(messageData, business._id.toString(), business),
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
       status: 'delivered',
       businessId: business._id  // ✅ MULTI-BUSINESS: Track business
@@ -159,7 +160,7 @@ exports.processIncomingMessage = async (webhookData) => {
   }
 };
 
-async function buildMessageContent(messageData, businessId) {
+async function buildMessageContent(messageData, businessId, business) {
   const content = {
     text: messageData.text?.body || ''
   };
@@ -170,25 +171,42 @@ async function buildMessageContent(messageData, businessId) {
 
     case 'image':
       console.log('🖼️  Processing image message:', {
-        hasUrl: !!messageData.image?.url,
-        url: messageData.image?.url?.substring(0, 50) + '...',
+        hasId: !!messageData.image?.id,
+        mediaId: messageData.image?.id,
         mimeType: messageData.image?.mime_type
       });
       
-      // Upload to Cloudinary for permanent storage
-      if (messageData.image?.url) {
-        console.log('⬆️  Starting Cloudinary upload for image...');
+      // Get access token from business
+      const accessToken = business.whatsappConfig?.accessToken;
+      if (!accessToken) {
+        console.error('❌ No access token found for business');
+        break;
+      }
+      
+      // Get media URL from WhatsApp using media ID
+      if (messageData.image?.id) {
+        console.log('🔍 Fetching media URL from WhatsApp API...');
+        const mediaUrlResult = await getMediaUrl(messageData.image.id, accessToken);
+        
+        if (!mediaUrlResult.success) {
+          console.error('❌ Failed to get media URL:', mediaUrlResult.error);
+          break;
+        }
+        
+        console.log('✅ Got media URL, starting Cloudinary upload...');
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.image.url,
-          messageData.image.mime_type,
-          `image-${messageData.id}.${messageData.image.mime_type?.split('/')[1] || 'jpg'}`,
-          businessId
+          mediaUrlResult.url,
+          messageData.image.mime_type || mediaUrlResult.mime_type,
+          `image-${messageData.id}.${(messageData.image.mime_type || mediaUrlResult.mime_type)?.split('/')[1] || 'jpg'}`,
+          businessId,
+          accessToken
         );
+        
         console.log('✅ Cloudinary result:', cloudinaryResult.success ? 'SUCCESS' : 'FAILED');
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.image.url;
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : null;
         content.cloudinaryPublicId = cloudinaryResult.publicId;
       } else {
-        console.warn('⚠️  No image URL found, skipping Cloudinary upload');
+        console.warn('⚠️  No image ID found in message');
       }
       content.mediaId = messageData.image?.id;
       content.mediaType = 'image';
@@ -197,16 +215,21 @@ async function buildMessageContent(messageData, businessId) {
       break;
 
     case 'video':
-      // Upload to Cloudinary for permanent storage
-      if (messageData.video?.url) {
-        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.video.url,
-          messageData.video.mime_type,
-          `video-${messageData.id}.${messageData.video.mime_type?.split('/')[1] || 'mp4'}`,
-          businessId
-        );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.video.url;
-        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      if (messageData.video?.id) {
+        console.log('🎥 Fetching video URL from WhatsApp API...');
+        const mediaUrlResult = await getMediaUrl(messageData.video.id, business.whatsappConfig?.accessToken);
+        
+        if (mediaUrlResult.success) {
+          const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+            mediaUrlResult.url,
+            messageData.video.mime_type || mediaUrlResult.mime_type,
+            `video-${messageData.id}.${(messageData.video.mime_type || mediaUrlResult.mime_type)?.split('/')[1] || 'mp4'}`,
+            businessId,
+            business.whatsappConfig?.accessToken
+          );
+          content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : null;
+          content.cloudinaryPublicId = cloudinaryResult.publicId;
+        }
       }
       content.mediaId = messageData.video?.id;
       content.mediaType = 'video';
@@ -215,16 +238,21 @@ async function buildMessageContent(messageData, businessId) {
       break;
 
     case 'audio':
-      // Upload to Cloudinary for permanent storage
-      if (messageData.audio?.url) {
-        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.audio.url,
-          messageData.audio.mime_type,
-          `audio-${messageData.id}.${messageData.audio.mime_type?.split('/')[1] || 'ogg'}`,
-          businessId
-        );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.audio.url;
-        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      if (messageData.audio?.id) {
+        console.log('🎵 Fetching audio URL from WhatsApp API...');
+        const mediaUrlResult = await getMediaUrl(messageData.audio.id, business.whatsappConfig?.accessToken);
+        
+        if (mediaUrlResult.success) {
+          const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+            mediaUrlResult.url,
+            messageData.audio.mime_type || mediaUrlResult.mime_type,
+            `audio-${messageData.id}.${(messageData.audio.mime_type || mediaUrlResult.mime_type)?.split('/')[1] || 'ogg'}`,
+            businessId,
+            business.whatsappConfig?.accessToken
+          );
+          content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : null;
+          content.cloudinaryPublicId = cloudinaryResult.publicId;
+        }
       }
       content.mediaId = messageData.audio?.id;
       content.mediaType = 'audio';
@@ -232,16 +260,21 @@ async function buildMessageContent(messageData, businessId) {
       break;
 
     case 'document':
-      // Upload to Cloudinary for permanent storage
-      if (messageData.document?.url) {
-        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
-          messageData.document.url,
-          messageData.document.mime_type,
-          messageData.document.filename || `document-${messageData.id}.pdf`,
-          businessId
-        );
-        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.document.url;
-        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      if (messageData.document?.id) {
+        console.log('📄 Fetching document URL from WhatsApp API...');
+        const mediaUrlResult = await getMediaUrl(messageData.document.id, business.whatsappConfig?.accessToken);
+        
+        if (mediaUrlResult.success) {
+          const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+            mediaUrlResult.url,
+            messageData.document.mime_type || mediaUrlResult.mime_type,
+            messageData.document.filename || `document-${messageData.id}.pdf`,
+            businessId,
+            business.whatsappConfig?.accessToken
+          );
+          content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : null;
+          content.cloudinaryPublicId = cloudinaryResult.publicId;
+        }
       }
       content.mediaId = messageData.document?.id;
       content.mediaType = 'document';

@@ -28,7 +28,7 @@ class BusinessCache {
     const business = await Business.findOne({
       'whatsappConfig.phoneNumberId': phoneNumberId,
       status: 'active'
-    }).select('+whatsappConfig.appSecret +whatsappConfig.verifyToken');
+    }).select('+whatsappConfig.appSecret +whatsappConfig.verifyToken +whatsappConfig.accessToken');
     
     if (business) {
       this.cache.set(cacheKey, {
