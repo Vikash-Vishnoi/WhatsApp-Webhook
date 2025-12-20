@@ -32,6 +32,13 @@ class CloudinaryService {
       const headers = {};
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
+        console.log('🔑 Using access token:', accessToken.substring(0, 20) + '...');
+      } else {
+        console.error('❌ No access token provided for WhatsApp media download');
+        return {
+          success: false,
+          error: 'No access token provided'
+        };
       }
       
       const response = await axios.get(whatsappMediaUrl, {
@@ -47,6 +54,14 @@ class CloudinaryService {
       return await this.uploadMedia(buffer, mimeType, filename, `whatsapp-incoming/${businessId}`);
     } catch (error) {
       console.error('❌ Failed to download/upload media:', error.message);
+      
+      // Log more details for 401 errors
+      if (error.response?.status === 401) {
+        console.error('🔐 401 Unauthorized - Access token is invalid or expired');
+        console.error('   Please regenerate your WhatsApp access token and update it in the database');
+        console.error('   Steps: Meta Developer Console → Your App → WhatsApp → API Setup → Generate Token');
+      }
+      
       return {
         success: false,
         error: error.message
