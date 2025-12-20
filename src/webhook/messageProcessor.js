@@ -1,5 +1,6 @@
 const { saveMessageToConversation, findOrCreateConversation } = require('../database/mongodb');
 const { notifyClients } = require('../services/notifier');
+const cloudinaryService = require('../services/cloudinaryService');
 
 // ✅ MULTI-BUSINESS: Import business cache for routing
 const businessCache = require('../utils/businessCache');
@@ -103,7 +104,7 @@ exports.processIncomingMessage = async (webhookData) => {
       to: business.whatsappConfig.phoneNumberId,  // ✅ MULTI-BUSINESS: Use business phone
       direction: 'in',
       type: messageData.type,
-      content: buildMessageContent(messageData),
+      content: await buildMessageContent(messageData, business._id.toString()),
       timestamp: new Date(parseInt(messageData.timestamp) * 1000),
       status: 'delivered',
       businessId: business._id  // ✅ MULTI-BUSINESS: Track business
@@ -158,7 +159,7 @@ exports.processIncomingMessage = async (webhookData) => {
   }
 };
 
-function buildMessageContent(messageData) {
+async function buildMessageContent(messageData, businessId) {
   const content = {
     text: messageData.text?.body || ''
   };
@@ -168,7 +169,17 @@ function buildMessageContent(messageData) {
       break;
 
     case 'image':
-      content.mediaUrl = messageData.image?.link;
+      // Upload to Cloudinary for permanent storage
+      if (messageData.image?.link) {
+        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+          messageData.image.link,
+          messageData.image.mime_type,
+          `image-${messageData.id}.${messageData.image.mime_type?.split('/')[1] || 'jpg'}`,
+          businessId
+        );
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.image.link;
+        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      }
       content.mediaId = messageData.image?.id;
       content.mediaType = 'image';
       content.mimeType = messageData.image?.mime_type;
@@ -176,7 +187,17 @@ function buildMessageContent(messageData) {
       break;
 
     case 'video':
-      content.mediaUrl = messageData.video?.link;
+      // Upload to Cloudinary for permanent storage
+      if (messageData.video?.link) {
+        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+          messageData.video.link,
+          messageData.video.mime_type,
+          `video-${messageData.id}.${messageData.video.mime_type?.split('/')[1] || 'mp4'}`,
+          businessId
+        );
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.video.link;
+        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      }
       content.mediaId = messageData.video?.id;
       content.mediaType = 'video';
       content.mimeType = messageData.video?.mime_type;
@@ -184,14 +205,34 @@ function buildMessageContent(messageData) {
       break;
 
     case 'audio':
-      content.mediaUrl = messageData.audio?.link;
+      // Upload to Cloudinary for permanent storage
+      if (messageData.audio?.link) {
+        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+          messageData.audio.link,
+          messageData.audio.mime_type,
+          `audio-${messageData.id}.${messageData.audio.mime_type?.split('/')[1] || 'ogg'}`,
+          businessId
+        );
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.audio.link;
+        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      }
       content.mediaId = messageData.audio?.id;
       content.mediaType = 'audio';
       content.mimeType = messageData.audio?.mime_type;
       break;
 
     case 'document':
-      content.mediaUrl = messageData.document?.link;
+      // Upload to Cloudinary for permanent storage
+      if (messageData.document?.link) {
+        const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
+          messageData.document.link,
+          messageData.document.mime_type,
+          messageData.document.filename || `document-${messageData.id}.pdf`,
+          businessId
+        );
+        content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.document.link;
+        content.cloudinaryPublicId = cloudinaryResult.publicId;
+      }
       content.mediaId = messageData.document?.id;
       content.mediaType = 'document';
       content.mimeType = messageData.document?.mime_type;
