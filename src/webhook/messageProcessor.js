@@ -169,16 +169,26 @@ async function buildMessageContent(messageData, businessId) {
       break;
 
     case 'image':
+      console.log('🖼️  Processing image message:', {
+        hasUrl: !!messageData.image?.url,
+        url: messageData.image?.url?.substring(0, 50) + '...',
+        mimeType: messageData.image?.mime_type
+      });
+      
       // Upload to Cloudinary for permanent storage
       if (messageData.image?.url) {
+        console.log('⬆️  Starting Cloudinary upload for image...');
         const cloudinaryResult = await cloudinaryService.uploadFromWhatsAppUrl(
           messageData.image.url,
           messageData.image.mime_type,
           `image-${messageData.id}.${messageData.image.mime_type?.split('/')[1] || 'jpg'}`,
           businessId
         );
+        console.log('✅ Cloudinary result:', cloudinaryResult.success ? 'SUCCESS' : 'FAILED');
         content.mediaUrl = cloudinaryResult.success ? cloudinaryResult.url : messageData.image.url;
         content.cloudinaryPublicId = cloudinaryResult.publicId;
+      } else {
+        console.warn('⚠️  No image URL found, skipping Cloudinary upload');
       }
       content.mediaId = messageData.image?.id;
       content.mediaType = 'image';
