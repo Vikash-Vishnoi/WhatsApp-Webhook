@@ -48,7 +48,18 @@ exports.handleWebhook = async (req, res) => {
           console.log('📋 Processing entry:', entry.id);
           
           // Find business by WABA ID (using cache)
-          const business = await businessCache.getByWabaId(entry.id);
+          let business = await businessCache.getByWabaId(entry.id);
+          
+          if (!business && entry.changes && entry.changes.length > 0) {
+            // Fallback to phone number ID if WABA ID fails
+            const firstChange = entry.changes[0];
+            const fallbackPhoneId = firstChange.value?.metadata?.phone_number_id || firstChange.value?.phone_number_id;
+            
+            if (fallbackPhoneId) {
+              console.log('🔄 Falling back to find business by Phone Number ID:', fallbackPhoneId);
+              business = await businessCache.getByPhoneNumberId(fallbackPhoneId);
+            }
+          }
           
           if (!business) {
             console.error('❌ No business found for WABA ID:', entry.id);
